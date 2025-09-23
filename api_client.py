@@ -29,7 +29,8 @@ class SpotifyAPI(object):
     def get_token_headers(self):
         client_creds_b64 = self.get_client_creds()
         return {
-            "Authorization": f"Basic {client_creds_b64}"
+            "Authorization": f"Basic {client_creds_b64}",
+            "Content-Type": "application/x-www-form-urlencoded"
         }
 
     def get_client_creds(self):
@@ -111,25 +112,33 @@ class SpotifyAPI(object):
     def get_artist(self, _id):
         return self.get_resource(_id, resource_type='artists')
 
-    def _search_(self, query_params):
+    def search(self, query, search_type="track", limit=20, offset=0, market=None):
         headers = self.get_resource_header()
         endpoint = "https://api.spotify.com/v1/search"
-        lookup_url = f"{endpoint}?{query_params}"
-        r = requests.get(lookup_url, headers=headers)
-        if r.status_code not in range(200,299):
-            print(r.status_code)
-            return {}
-        print(r.status_code)
-        print(r.text)
-        return (r.text)
+        
+        params = {
+            "q": query,
+            "type": search_type,
+            "limit": limit,
+            "offset": offset
+        }
+        
+        if market:
+            params["market"] = market
+            
+        r = requests.get(endpoint, headers=headers, params=params)
+        if r.status_code not in range(200, 299):
+            raise Exception(f"Search failed with status {r.status_code}: {r.text}")
+        return r.json()
 
-    def base_search(self, query=None):
-        if query == None:
-            raise Exception("A query is required")
-        if isinstance(query, dict):
-            query = ""
-        query_params = urlencode ({"q":query_params, "type":search_type.lower()})
-        return self.base_search(query_params)
+    def search_artists(self, query, limit=20, offset=0, market=None):
+        return self.search(query, "artist", limit, offset, market)
+    
+    def search_albums(self, query, limit=20, offset=0, market=None):
+        return self.search(query, "album", limit, offset, market)
+    
+    def search_tracks(self, query, limit=20, offset=0, market=None):
+        return self.search(query, "track", limit, offset, market)
     
 
 
@@ -138,38 +147,108 @@ class SpotifyAPI(object):
     # For BFF: get collaborative artists on every song, find mode
     # For MIMD: get popularity score for artist
 
-    def get_albums_by_artist(self, artist_id):
+    def get_albums_by_artist(self, artist_id, include_groups=None, market=None, limit=20, offset=0):
         endpoint = f"https://api.spotify.com/v1/artists/{artist_id}/albums"
         headers = self.get_resource_header()
-        album_id_list = []
-        r = requests.get(endpoint, headers=headers)
-        if r.status_code not in range(200,299):
-            return {}
-        r = r.json()
-        for i in r["items"]:
-            album_id = i.get("id")
-            album_id_list.append(album_id)
-        return album_id_list
+        
+        params = {
+            "limit": limit,
+            "offset": offset
+        }
+        
+        if include_groups:
+            params["include_groups"] = include_groups
+        if market:
+            params["market"] = market
+            
+        r = requests.get(endpoint, headers=headers, params=params)
+        if r.status_code not in range(200, 299):
+            raise Exception(f"Failed to get albums for artist {artist_id}: {r.status_code}")
+        return r.json()
 
-    def get_songs_on_album(self, album_id):
+    def get_album_tracks(self, album_id, market=None, limit=20, offset=0):
         endpoint = f"https://api.spotify.com/v1/albums/{album_id}/tracks"
         headers = self.get_resource_header()
-        song_id_list = []
-        r = requests.get(endpoint, headers=headers)
-        if r.status_code not in range(200,299):
-            return {}
-        r = r.json()
-        for i in r["items"]:
-            song_id = i.get("id")
-            song_id_list.append(song_id)
-        return song_id_list
+        
+        params = {
+            "limit": limit,
+            "offset": offset
+        }
+        
+        if market:
+            params["market"] = market
+            
+        r = requests.get(endpoint, headers=headers, params=params)
+        if r.status_code not in range(200, 299):
+            raise Exception(f"Failed to get tracks for album {album_id}: {r.status_code}")
+        return r.json()
 
-##    def get_all_songs_by_artist(self, artist_id):
-##        albums = self.get_albums_by_artist(artist_id)
-##        album_id_list = []
-##        tracks_id_list = []
-##        for i in album_id_list:
-##            tracks = self.get_songs_on_album(album_id)
-##        return album_id_list
-##        # return json data for all songs on all albums artist
+    def get_all_tracks_by_artist(self, artist_id, include_groups="album,single", market=None):
+        all_tracks = []
+        offset = 0
+        limit = 50
+        
+        while True:
+            albums_response = self.get_albums_by_artist(
+                artist_id, include_groups=include_groups, market=market, 
+                limit=limit, offset=offset
+            )
+            
+            albums = albums_response.get("items", [])
+            if not albums:
+                break
+                
+            for album in albums:
+                album_id = album.get("id")
+                if album_id:
+                    tracks_response = self.get_album_tracks(album_id, market=market)
+                    tracks = tracks_response.get("items", [])
+                    all_tracks.extend(tracks)
+            
+            if len(albums) < limit:
+                break
+            offset += limit
+            
+        return all_tracks
+    
+    def get_multiple_tracks(self, track_ids, market=None):
+        endpoint = "https://api.spotify.com/v1/tracks"
+        headers = self.get_resource_header()
+        
+        params = {"ids": ",".join(track_ids)}
+        if market:
+            params["market"] = market
+            
+        r = requests.get(endpoint, headers=headers, params=params)
+        if r.status_code not in range(200, 299):
+            raise Exception(f"Failed to get multiple tracks: {r.status_code}")
+        return r.json()
+    
+    def get_artist_top_tracks(self, artist_id, market="US"):
+        endpoint = f"https://api.spotify.com/v1/artists/{artist_id}/top-tracks"
+        headers = self.get_resource_header()
+        
+        params = {"market": market}
+        
+        r = requests.get(endpoint, headers=headers, params=params)
+        if r.status_code not in range(200, 299):
+            raise Exception(f"Failed to get top tracks for artist {artist_id}: {r.status_code}")
+        return r.json()
+    
+    def calculate_potty_mouth_meter(self, artist_id):
+        tracks = self.get_all_tracks_by_artist(artist_id)
+        if not tracks:
+            return 0.0
+            
+        explicit_count = sum(1 for track in tracks if track.get("explicit", False))
+        total_count = len(tracks)
+        
+        return (explicit_count / total_count) * 100 if total_count > 0 else 0.0
+    
+    def get_artist_popularity(self, artist_id):
+        artist_data = self.get_artist(artist_id)
+        return {
+            "popularity": artist_data.get("popularity", 0),
+            "followers": artist_data.get("followers", {}).get("total", 0)
+        }
 
