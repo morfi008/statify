@@ -143,8 +143,8 @@ class SpotifyAPI(object):
 
 
     # Statify operations : PMM, MIMD, BFF
-    # For PMM: get explicit label for every song by artist, calculate %
-    # For BFF: get collaborative artists on every song, find mode
+    # For PMM: get explicit label for every song by artist
+    # For BFF: get collaborative artists on every song
     # For MIMD: get popularity score for artist
 
     def get_albums_by_artist(self, artist_id, include_groups=None, market=None, limit=20, offset=0):
@@ -235,20 +235,4 @@ class SpotifyAPI(object):
             raise Exception(f"Failed to get top tracks for artist {artist_id}: {r.status_code}")
         return r.json()
     
-    def calculate_potty_mouth_meter(self, artist_id):
-        tracks = self.get_all_tracks_by_artist(artist_id)
-        if not tracks:
-            return 0.0
-            
-        explicit_count = sum(1 for track in tracks if track.get("explicit", False))
-        total_count = len(tracks)
-        
-        return (explicit_count / total_count) * 100 if total_count > 0 else 0.0
-    
-    def get_artist_popularity(self, artist_id):
-        artist_data = self.get_artist(artist_id)
-        return {
-            "popularity": artist_data.get("popularity", 0),
-            "followers": artist_data.get("followers", {}).get("total", 0)
-        }
 

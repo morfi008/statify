@@ -68,11 +68,15 @@ class TestSpotifyAPI(unittest.TestCase):
         self.assertIn("Could not authenticate client", str(context.exception))
     
     def test_get_access_token_none(self):
-        with patch.object(self.api, 'perform_auth') as mock_auth:
-            mock_auth.return_value = True
+        self.api.access_token = None
+        
+        def mock_perform_auth():
             self.api.access_token = "test_token"
             self.api.access_token_expires = datetime.datetime.now() + datetime.timedelta(hours=1)
-            
+            self.api.access_token_did_expire = False
+            return True
+        
+        with patch.object(self.api, 'perform_auth', side_effect=mock_perform_auth) as mock_auth:
             token = self.api.get_access_token()
             
             self.assertEqual(token, "test_token")
@@ -82,11 +86,13 @@ class TestSpotifyAPI(unittest.TestCase):
         self.api.access_token = "expired_token"
         self.api.access_token_expires = datetime.datetime.now() - datetime.timedelta(hours=1)
         
-        with patch.object(self.api, 'perform_auth') as mock_auth:
-            mock_auth.return_value = True
+        def mock_perform_auth():
             self.api.access_token = "new_token"
             self.api.access_token_expires = datetime.datetime.now() + datetime.timedelta(hours=1)
-            
+            self.api.access_token_did_expire = False
+            return True
+        
+        with patch.object(self.api, 'perform_auth', side_effect=mock_perform_auth) as mock_auth:
             token = self.api.get_access_token()
             
             self.assertEqual(token, "new_token")
